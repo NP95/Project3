@@ -38,7 +38,7 @@ test_full:
 prelim_solution:
 	@# Port: passed_in | Path: ./testing | num_dispatcher: 1 | num_workers: 1
 	@# queue_length: 50 | cache_size: 50
-
+	@chmod +x server_prelim_sol
 	@read -p "Enter a random port between 1024 & 65536: " sock_in; \
 	./server_prelim_sol $$sock_in ./testing 1 1 50 50
 
