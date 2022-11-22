@@ -121,16 +121,16 @@ void * dispatch(void *arg) {
 
   /********************* DO NOT REMOVE SECTION - TOP     *********************/
 
-
+  
   /* TODO (B.I)
   *    Description:      Get the id as an input argument from arg, set it to ID
   */
-
-
+  //int id = *(int *) arg;
+  
   while (1) {
 
     /* TODO (FOR INTERMEDIATE SUBMISSION)
-    *    Description:      Receive a single request and print the conents of that request
+    *    Description:      Receive a single request and print the contents of that request
     *                      The TODO's below are for the full submission, you do not have to use a 
     *                      buffer to receive a single request 
     *    Hint:             Helpful Functions: int accept_connection(void) | int get_request(int fd, char *filename
@@ -143,17 +143,18 @@ void * dispatch(void *arg) {
     *    Description:      Accept client connection
     *    Utility Function: int accept_connection(void) //utils.h => Line 24
     */
-
-
+    int fd = accept_connection();
 
     /* TODO (B.III)
     *    Description:      Get request from the client
     *    Utility Function: int get_request(int fd, char *filename); //utils.h => Line 41
     */
-
-
-
-    //fprintf(stderr, "Dispatcher Received Request: fd[%d] request[%s]\n", tempreq.fd, tempreq.request);
+    char filename[BUFF_SIZE];
+    if (get_request(fd, filename) != 0) {
+      printf("Error on getting request\n");
+    }
+    fprintf(stderr, "Dispatcher Received Request: fd[%d] request[%s]\n", fd, filename);
+    //printf("Dispatcher Received Request: fd[%d] request[%s]\n", fd, filename);
     /* TODO (B.IV)
     *    Description:      Add the request into the queue
     */
@@ -201,7 +202,7 @@ void * worker(void *arg) {
   /* TODO (C.I)
   *    Description:      Get the id as an input argument from arg, set it to ID
   */
-
+  int id = *(int *) arg;
 
   while (1) {
     /* TODO (C.II)
@@ -273,7 +274,12 @@ int main(int argc, char **argv) {
   /* TODO (A.I)
   *    Description:      Get the input args --> (1) port (2) path (3) num_dispatcher (4) num_workers  (5) queue_length (6) cache_size
   */
-
+  port = atoi(argv[1]);
+  strncpy(path, argv[2], PATH_MAX);
+  num_dispatcher = atoi(argv[3]);
+  num_worker = atoi(argv[4]);
+  queue_len = atoi(argv[5]);
+  cache_len = atoi(argv[6]);
 
 
   /* TODO (A.II)
@@ -282,8 +288,40 @@ int main(int argc, char **argv) {
   *                     (3) num_dispatcher: {Should be >= 1 and <= MAX_THREADS} | (4) num_workers: {Should be >= 1 and <= MAX_THREADS}
   *                     (5) queue_length: {Should be >= 1 and <= MAX_QUEUE_LEN} | (6) cache_size: {Should be >= 1 and <= MAX_CE}
   */
- 
 
+  //printf("%d\t%s\t%d\t%d\t%d\t%d\n", port, path, num_dispatcher, num_worker, queue_len, cache_len);
+  if(port < MIN_PORT || port > MAX_PORT) {
+    printf("Port %d is not valid\n", port);
+    exit(1);
+  }
+
+  DIR * dir = opendir(path);
+  if (dir == NULL) {
+    printf("Path %s is not valid\n", path);
+    closedir(dir);
+    exit(1);
+  }
+  closedir(dir);
+  
+  if(num_dispatcher < 1 || num_dispatcher > MAX_THREADS) {
+    printf("Number of Dispatcher threads %d is not valid\n", num_dispatcher);
+    exit(1);
+  }
+
+  if(num_worker < 1 || num_worker > MAX_THREADS) {
+    printf("Number of Worker threads %d is not valid\n", num_worker);
+    exit(1);
+  }
+
+  if(queue_len < 1 || queue_len > MAX_QUEUE_LEN) {
+    printf("Queue length %d is not valid\n", queue_len);
+    exit(1);
+  }
+
+  if(cache_len < 1 || cache_len > MAX_CE) {
+    printf("Cache length %d is not valid\n", cache_len);
+    exit(1);
+  }
 
   /********************* DO NOT REMOVE SECTION - TOP    *********************/
   printf("Arguments Verified:\n\
@@ -300,15 +338,24 @@ int main(int argc, char **argv) {
   *    Description:      Open log file
   *    Hint:             Use Global "File* logfile", use "web_server_log" as the name, what open flags do you want?
   */
-
-
+  int openFlags = 0;
+	mode_t filePerms;
+  openFlags = O_CREAT | O_RDWR | O_TRUNC;
+	filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+  if (open("webserver_log", openFlags, filePerms) == -1) {
+		printf("Failed to open log file webserver_log");
+		exit(1);
+	}
 
   /* TODO (A.IV)
   *    Description:      Change the current working directory to server root directory
   *    Hint:             Check for error!
   */
-
-
+  char s[1000];
+  if(chdir(path) != 0) {
+    printf("Current working directory %s could not be changed to server root directory %s\n", getcwd(s, 1000), path);
+    exit(1);
+  }
 
   /* TODO (A.V)
   *    Description:      Initialize cache  
@@ -316,13 +363,11 @@ int main(int argc, char **argv) {
   */
 
 
-
   /* TODO (A.VI)
   *    Description:      Start the server
   *    Utility Function: void init(int port); //look in utils.h 
   */
-
-
+  init(port);
 
   /* TODO (A.VII)
   *    Description:      Create dispatcher and worker threads 
@@ -330,7 +375,20 @@ int main(int argc, char **argv) {
   *                      You will want to initialize some kind of global array to pass in thread ID's
   *                      How should you track this p_thread so you can terminate it later? [global]
   */
-
+  for(dispatcherIndex = 0; dispatcherIndex < num_dispatcher; dispatcherIndex++) {
+    // Create threads
+    threadID[dispatcherIndex] = dispatcherIndex;
+    if(pthread_create(&(dispatcher_thread[dispatcherIndex]), NULL, dispatch, (void *) &threadID[dispatcherIndex]) != 0) {
+      printf("Thread %d failed to create\n", dispatcherIndex);
+    }
+  }
+  for(workerIndex = 0; workerIndex < num_worker; workerIndex++) {
+    // Create threads
+    threadID[workerIndex] = workerIndex;
+    if(pthread_create(&(worker_thread[workerIndex]), NULL, worker, (void *) &threadID[workerIndex]) != 0) {
+      printf("Thread %d failed to create\n", workerIndex);
+    }
+  }
 
   // Wait for each of the threads to complete their work
   // Threads (if created) will not exit (see while loop), but this keeps main from exiting
