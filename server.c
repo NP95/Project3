@@ -76,20 +76,67 @@ void initCache(){
 
 /* ************************************ Utilities ********************************/
 // Function to get the content type from the request
+// What is the type of argument being passed?
 char* getContentType(char *mybuf) {
   /* TODO (Get Content Type)
   *    Description:      Should return the content type based on the file type in the request
   *                      (See Section 5 in Project description for more details)
   *    Hint:             Need to check the end of the string passed in to check for .html, .jpg, .gif, etc.
   */
+  int ext_flag=0;
+  int extension_tracker=0;
+  char* extension;
+  char* content_type;
+  char* html_content_string="text/html";
+  char* jpeg_content_string="image/jpeg";
+  char* gif_content_string="image/gif";
+  char* plaintext_content_string="text/plain";
 
+  extension=malloc(10); //Put in a #define before submitting
+  //extract the extension and malloc it for the extension
+  for(int i=0;i < strlen(mybuf);i++) 
+   {
+    //Extension extraction step -- BEGIN	   
+	 if(mybuf[i]=='.')
+	 {
+           ext_flag=1;
+	 }
 
+	 if(ext_flag)
+	 {
+		 extension[extension_tracker]=mybuf[i];
+		 extension_tracker++;
+	 }
+   
+   }
+
+  //Use strncmp for the extension
+  if(strcmp(extension,html_content_string))
+  {
+   content_type=html_content_string;
+  }
+  else if(strcmp(extension,jpeg_content_string))
+  {
+     content_type=jpeg_content_string;	  
+  
+  }
+  else if(strcmp(extension,gif_content_string))
+  {
+  
+     content_type=jpeg_content_string;	  
+  }
+  else  
+  {
+  
+     content_type=plaintext_content_string;	  
+  }
    //TODO remove this line and return the actual content type
-  return NULL;
+   return content_type;
 }
 
 // Function to open and read the file from the disk into the memory. Add necessary arguments as needed
-// Hint: caller must malloc the memory space
+// Hint: You must malloc inside of readFromDisk
+// After you determine your file size and before you read file contents
 int readFromDisk(int fd, char *mybuf, void **memory) {
   //    Description: Try and open requested file, return INVALID if you cannot meaning error
 
@@ -107,7 +154,7 @@ int readFromDisk(int fd, char *mybuf, void **memory) {
   *    Hint:             Using fstat or fseek could be helpful here
   *                      What do we do with files after we open them?
   */
-
+   
 
 
   //TODO remove this line and follow directions above
@@ -169,7 +216,8 @@ void * dispatch(void *arg) {
         //(4) Insert the request into the queue
         
         //(5) Update the queue index in a circular fashion
-
+        //Use modulo operator
+	     
         //(6) Release the lock on the request queue and signal that the queue is not empty anymore
 
  }
@@ -361,7 +409,7 @@ int main(int argc, char **argv) {
   *    Description:      Initialize cache  
   *    Local Function:   void    initCache();
   */
-
+initCache();
 
   /* TODO (A.VI)
   *    Description:      Start the server
