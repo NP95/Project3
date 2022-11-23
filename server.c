@@ -1,6 +1,6 @@
 #include "server.h"
 #define PERM 0644
-
+#define EXTENSION_STRING_SIZE 20
 //Global Variables [Values Set in main()]
 int queue_len           = INVALID;                              //Global integer to indicate the length of the queue
 int cache_len           = INVALID;                              //Global integer to indicate the length or # of entries in the cache        
@@ -11,7 +11,7 @@ FILE *logfile;                                                  //Global file po
 
 /* ************************ Global Hints **********************************/
 
-//int ????      = 0;                            //[Cache]           --> When using cache, how will you track which cache entry to evict from array?
+int fifo      = 0;                            //[Cache]           --> When using cache, how will you track which cache entry to evict from array?
 int workerIndex = 0;                            //[worker()]        --> How will you track which index in the request queue to remove next?
 int dispatcherIndex = 0;                        //[dispatcher()]    --> How will you know where to insert the next request received into the request queue?
 int curequest= 0;                               //[multiple funct]  --> How will you update and utilize the current number of requests in the request queue?
@@ -22,14 +22,19 @@ pthread_t dispatcher_thread[MAX_THREADS];       //[multiple funct]  --> How will
 int threadID[MAX_THREADS];                      //[multiple funct]  --> Might be helpful to track the ID's of your threads in a global array
 
 
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;        //What kind of locks will you need to make everything thread safe? [Hint you need multiple]
+pthread_mutex_t req_queue_lock = PTHREAD_MUTEX_INITIALIZER;        //What kind of locks will you need to make everything thread safe? [Hint you need multiple]
 pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
+
 pthread_cond_t some_content = PTHREAD_COND_INITIALIZER;  //What kind of CVs will you need  (i.e. queue full, queue empty) [Hint you need multiple]
+pthread_cond_t queue_full = PTHREAD_COND_INITIALIZER;  
+pthread_cond_t queue_empty = PTHREAD_COND_INITIALIZER;  
 pthread_cond_t free_space = PTHREAD_COND_INITIALIZER;
+
 request_t req_entries[MAX_QUEUE_LEN];                    //How will you track the requests globally between threads? How will you ensure this is thread safe?
 
 
-//cache_entry_t* ?????;                                  //[Cache]  --> How will you read from, add to, etc. the cache? Likely want this to be global
+cache_entry_t* cache[];                                  //[Cache]  --> How will you read from, add to, etc. the cache? Likely want this to be globali Dynamically allocate the cache in init cache
 
 /**********************************************************************************/
 
@@ -46,6 +51,8 @@ int getCacheIndex(char *request){
   /* TODO (GET CACHE INDEX)
   *    Description:      return the index if the request is present in the cache otherwise return INVALID
   */
+
+  /*How do you check the membership in a cache?*/
   return INVALID;
 }
 
@@ -55,6 +62,9 @@ void addIntoCache(char *mybuf, char *memory , int memory_size){
   *    Description:      It should add the request at an index according to the cache replacement policy
   *                      Make sure to allocate/free memory when adding or replacing cache entries
   */
+ /*Use getCacheIndex to check if exists mark it as a CACHE HIT else mark it as a cache miss*/
+ /* If a CACHE HIT just return else if a CACHE miss, add into cache*/
+/*Implement a FIFO mechanism? (How) */
 }
 
 // Function to clear the memory allocated to the cache
@@ -62,6 +72,7 @@ void deleteCache(){
   /* TODO (CACHE)
   *    Description:      De-allocate/free the cache memory
   */
+/*Free the memory allocated in the initCache argument*/
 
 }
 
@@ -70,6 +81,8 @@ void initCache(){
   /* TODO (CACHE)
   *    Description:      Allocate and initialize an array of cache entries of length cache size
   */
+
+/*Init cache probably requires you to allocate sizeof(cache_entry)*cache_len */
 }
 
 /**********************************************************************************/
@@ -92,7 +105,7 @@ char* getContentType(char *mybuf) {
   char* gif_content_string="image/gif";
   char* plaintext_content_string="text/plain";
 
-  extension=malloc(10); //Put in a #define before submitting
+  extension=malloc(EXTENSION_STRING_SIZE); //Put in a #define before submitting
   //extract the extension and malloc it for the extension
   for(int i=0;i < strlen(mybuf);i++) 
    {
@@ -152,7 +165,7 @@ int readFromDisk(int fd, char *mybuf, void **memory) {
   /* TODO 
   *    Description:      Find the size of the file you need to read, read all of the contents into a memory location and return the file size
   *    Hint:             Using fstat or fseek could be helpful here
-  *                      What do we do with files after we open them?
+  *                      What do we do with files after we open them? Something with memset, memcpy?
   */
    
 
@@ -172,7 +185,7 @@ void * dispatch(void *arg) {
   /* TODO (B.I)
   *    Description:      Get the id as an input argument from arg, set it to ID
   */
-  //int id = *(int *) arg;
+int id = *(int *) arg;
   
   while (1) {
 
@@ -190,8 +203,9 @@ void * dispatch(void *arg) {
     *    Description:      Accept client connection
     *    Utility Function: int accept_connection(void) //utils.h => Line 24
     */
+    request_t* dispatch_request=malloc(sizeof(request_t));
     int fd = accept_connection();
-
+    dispatch_request->fd = fd;
     /* TODO (B.III)
     *    Description:      Get request from the client
     *    Utility Function: int get_request(int fd, char *filename); //utils.h => Line 41
@@ -209,9 +223,10 @@ void * dispatch(void *arg) {
         //(1) Copy the filename from get_request into allocated memory to put on request queue
         
 
-        //(2) Request thread safe access to the request queue
-
+        //(2) Request thread safe access to the request queue (Request for the lock)
+         pthread_mutex_lock(&lock);
         //(3) Check for a full queue... wait for an empty one which is signaled from req_queue_notfull
+    //Condition variable here
 
         //(4) Insert the request into the queue
         
@@ -399,6 +414,7 @@ int main(int argc, char **argv) {
   *    Description:      Change the current working directory to server root directory
   *    Hint:             Check for error!
   */
+  //Probably this needs to be dynamically allocated?
   char s[1000];
   if(chdir(path) != 0) {
     printf("Current working directory %s could not be changed to server root directory %s\n", getcwd(s, 1000), path);
