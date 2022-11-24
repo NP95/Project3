@@ -11,7 +11,7 @@ FILE *logfile;                                                  //Global file po
 
 /* ************************ Global Hints **********************************/
 
-int fifo      = 0;                            //[Cache]           --> When using cache, how will you track which cache entry to evict from array?
+int current_cache_size= 0;                            //[Cache]           --> When using cache, how will you track which cache entry to evict from array?
 int workerIndex = 0;                            //[worker()]        --> How will you track which index in the request queue to remove next?
 int dispatcherIndex = 0;                        //[dispatcher()]    --> How will you know where to insert the next request received into the request queue?
 int curequest= 0;                               //[multiple funct]  --> How will you update and utilize the current number of requests in the request queue?
@@ -27,14 +27,14 @@ pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t cache_lock = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t some_content = PTHREAD_COND_INITIALIZER;  //What kind of CVs will you need  (i.e. queue full, queue empty) [Hint you need multiple]
-pthread_cond_t queue_full = PTHREAD_COND_INITIALIZER;  
-pthread_cond_t queue_empty = PTHREAD_COND_INITIALIZER;  
+pthread_cond_t queue_not_full = PTHREAD_COND_INITIALIZER;  
+pthread_cond_t queue_not_empty = PTHREAD_COND_INITIALIZER;  
 pthread_cond_t free_space = PTHREAD_COND_INITIALIZER;
 
 request_t req_entries[MAX_QUEUE_LEN];                    //How will you track the requests globally between threads? How will you ensure this is thread safe?
 
 
-cache_entry_t* cache[];                                  //[Cache]  --> How will you read from, add to, etc. the cache? Likely want this to be globali Dynamically allocate the cache in init cache
+cache_entry_t* cache;                                  //[Cache]  --> How will you read from, add to, etc. the cache? Likely want this to be globali Dynamically allocate the cache in init cache
 
 /**********************************************************************************/
 
@@ -51,9 +51,28 @@ int getCacheIndex(char *request){
   /* TODO (GET CACHE INDEX)
   *    Description:      return the index if the request is present in the cache otherwise return INVALID
   */
-
   /*How do you check the membership in a cache?*/
-  return INVALID;
+bool cache_hit=false;
+int index;
+for(int i=0; i < cache_len; i++)
+  {
+    if(cache[i]!=NULL)
+      {
+    if( (strcmp(cache[i]->request,request)))
+     {
+      cache_hit=true;
+      index=i;
+     }
+  }
+  }
+if(cache_hit)
+{
+ return index;
+ }
+else
+{
+return INVALID;
+}
 }
 
 // Function to add the request and its file content into the cache
@@ -63,8 +82,19 @@ void addIntoCache(char *mybuf, char *memory , int memory_size){
   *                      Make sure to allocate/free memory when adding or replacing cache entries
   */
  /*Use getCacheIndex to check if exists mark it as a CACHE HIT else mark it as a cache miss*/
- /* If a CACHE HIT just return else if a CACHE miss, add into cache*/
-/*Implement a FIFO mechanism? (How) */
+/*Implement a random eviction mechanism? (How) */
+/**/
+int evicted_index;
+evicted_index=(rand())%(cache_len);
+//Check if cache is full evict only if cache is fulll;
+if(current_cache_size==cache_len)
+{
+ //Allocate arguments to evicted index 
+ strcpy(cache[evicted_index]->request,mybuf);
+ strcpy(cache[evicted_index]->content,memory);
+ cache[evicted_index]->len=memory_size;
+}
+current_cache_size++;
 }
 
 // Function to clear the memory allocated to the cache
@@ -73,7 +103,7 @@ void deleteCache(){
   *    Description:      De-allocate/free the cache memory
   */
 /*Free the memory allocated in the initCache argument*/
-
+free(cache);
 }
 
 // Function to initialize the cache
@@ -81,6 +111,7 @@ void initCache(){
   /* TODO (CACHE)
   *    Description:      Allocate and initialize an array of cache entries of length cache size
   */
+cache=(cache_entry_t*)malloc(cache_len*sizeof(cache_entry_t));
 
 /*Init cache probably requires you to allocate sizeof(cache_entry)*cache_len */
 }
@@ -197,7 +228,7 @@ int id = *(int *) arg;
     *                      Recommend using the request_t structure from server.h to store the request. (Refer section 15 on the project write up)
     */
 
-
+    int queue_index;
 
     /* TODO (B.II)
     *    Description:      Accept client connection
@@ -221,20 +252,37 @@ int id = *(int *) arg;
     */
 
         //(1) Copy the filename from get_request into allocated memory to put on request queue
-        
-
+       //Mallocing?  
+        char* filename_argument;
+        filename_argument=(char*)malloc(sizeof(filename));
+        strcpy(filename_argument,filename);
         //(2) Request thread safe access to the request queue (Request for the lock)
-         pthread_mutex_lock(&lock);
+         pthread_mutex_lock(&req_queue_lock);
         //(3) Check for a full queue... wait for an empty one which is signaled from req_queue_notfull
     //Condition variable here
+     while(curequest == queue_len)
+      {
+        printf("Request queue is full \n"); 
+        pthread_cond_wait(&queue_full,&req_queue_lock);
+      }
 
         //(4) Insert the request into the queue
+        queue_index=
+        req_entries[curequest].fd=dispatch_request->fd;
+        strcpy(req_entries[queue_index],dispatch_request->request);
         
         //(5) Update the queue index in a circular fashion
         //Use modulo operator
+        //The dispatcher will add requests in the queue starting at index 0 until it reaches the end of the queue. Then it will start adding to 0 again. 
+         queue_index=(curequest+1)%(queue_len);
+         currequest++;
 	     
         //(6) Release the lock on the request queue and signal that the queue is not empty anymore
-
+         pthread_cond_signal(&queue_not_empty);
+         pthread_mutex_unlock(&req_queue_lock);
+         
+           free(dispatch_request);
+           free(filename_argument);
  }
 
   return NULL;
@@ -272,30 +320,45 @@ void * worker(void *arg) {
     *    Description:      Get the request from the queue and do as follows
     */
           //(1) Request thread safe access to the request queue by getting the req_queue_mutex lock
+         pthread_mutex_lock(&req_queue_lock);
 
           //(2) While the request queue is empty conditionally wait for the request queue lock once the not empty signal is raised
 
           //(3) Now that you have the lock AND the queue is not empty, read from the request queue
 
           //(4) Update the request queue remove index in a circular fashion
+           //The worker will; remove requests from the queue starting at index 0, then index 1, so on until it removes from the last index of the queue. Then it will start removing from the 0th index again
+
+
 
           //(5) Check for a path with only a "/" if that is the case add index.html to it
+          //How?
 
           //(6) Fire the request queue not full signal to indicate the queue has a slot opened up and release the request queue lock
 
+         pthread_mutex_unlock();
+         pthread_cond_signal();
     /* TODO (C.III)
     *    Description:      Get the data from the disk or the cache 
     *    Local Function:   int readFromDisk(//necessary arguments//);
     *                      int getCacheIndex(char *request);  
     *                      void addIntoCache(char *mybuf, char *memory , int memory_size);  
     */
+      if(int getCacheIndex())
+          {
+            }
+        else
+       {
+         readFromDisk();
+         addIntoCache();  
+       } 
 
 
     /* TODO (C.IV)
     *    Description:      Log the request into the file and terminal
     *    Utility Function: LogPrettyPrint(FILE* to_write, int threadId, int requestNumber, int file_descriptor, char* request_str, int num_bytes_or_error, bool cache_hit);
     *    Hint:             Call LogPrettyPrint with to_write = NULL which will print to the terminal
-    *                      You will need to lock and unlock the logfile to write to it in a thread safe manor
+    *                      You will need to lock and unlock the logfile to write to it in a thread safe manner
     */
 
 
@@ -401,11 +464,13 @@ int main(int argc, char **argv) {
   *    Description:      Open log file
   *    Hint:             Use Global "File* logfile", use "web_server_log" as the name, what open flags do you want?
   */
+  int logfd;
   int openFlags = 0;
 	mode_t filePerms;
   openFlags = O_CREAT | O_RDWR | O_TRUNC;
-	filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
-  if (open("webserver_log", openFlags, filePerms) == -1) {
+//	filePerms = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH;
+logfd=open(LOG_FILE_NAME, openFlags, PERM);
+  if (logfd == -1){ 
 		printf("Failed to open log file webserver_log");
 		exit(1);
 	}
@@ -469,6 +534,10 @@ initCache();
       printf("ERROR : Fail to join dispatcher thread %d.\n", i);
     }
   }
+
+ //Delete the cache
+ deleteCache();
+ close(logfd);
   fprintf(stderr, "SERVER DONE \n");  // will never be reached in SOLUTION
 }
 
